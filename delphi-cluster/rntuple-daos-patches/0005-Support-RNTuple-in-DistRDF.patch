@@ -1,0 +1,192 @@
+From 280134f0d97b9d6efc84c4c74c048e7455f3c248 Mon Sep 17 00:00:00 2001
+From: Vincenzo Eduardo Padulano <v.e.padulano@gmail.com>
+Date: Tue, 30 Nov 2021 02:47:45 -0600
+Subject: [PATCH] Support RNTuple in DistRDF
+
+---
+ .../distrdf/python/DistRDF/Backends/Base.py   | 14 +++++++++
+ .../python/DistRDF/Backends/Dask/Backend.py   |  4 +++
+ .../python/DistRDF/Backends/Dask/__init__.py  | 12 ++++++++
+ .../python/DistRDF/Backends/Spark/Backend.py  |  5 ++++
+ .../python/DistRDF/Backends/Spark/__init__.py | 11 +++++++
+ .../distrdf/python/DistRDF/HeadNode.py        | 30 +++++++++++++++++++
+ .../distrdf/python/DistRDF/Ranges.py          | 26 ++++++++++++++++
+ 7 files changed, 102 insertions(+)
+
+diff --git a/bindings/experimental/distrdf/python/DistRDF/Backends/Base.py b/bindings/experimental/distrdf/python/DistRDF/Backends/Base.py
+index e7b44bb67a..1998bdfc52 100644
+--- a/bindings/experimental/distrdf/python/DistRDF/Backends/Base.py
++++ b/bindings/experimental/distrdf/python/DistRDF/Backends/Base.py
+@@ -149,6 +149,8 @@ class BaseBackend(ABC):
+                 list: This respresents the list of (mergeable)values of all
+                 action nodes in the computational graph.
+             """
++            taskwatch = ROOT.TStopwatch()
++
+             # Disable graphics functionality in ROOT. It is not needed inside a
+             # distributed task
+             ROOT.gROOT.SetBatch(True)
+@@ -189,6 +191,18 @@ class BaseBackend(ABC):
+ 
+                 mergeables = [Utils.get_mergeablevalue(resultptr) for resultptr in resultptr_list]
+ 
++            # Retrieve task metrics
++            elapsed = taskwatch.RealTime()
++            metrics = rdf.ntuplemetrics
++            walltime = metrics.GetMetrics().GetCounter("RPageSourceDaos.timeWallRead").GetValueAsInt()
++            readthroughput = metrics.GetMetrics().GetCounter("RPageSourceDaos.bwRead").GetValueAsInt()
++            readpayload = metrics.GetMetrics().GetCounter("RPageSourceDaos.szReadPayload").GetValueAsInt()
++
++            csvname = f"distrdf_task{current_range.id}_ntuple_metrics_daos.txt"
++            logdir = os.environ.get("DISTRDF_NTUPLEMETRICS_DIR", "")
++            with open(os.path.join(logdir, csvname), "a+") as f:
++                        f.write(f"{round(elapsed,3)},{walltime},{readthroughput},{readpayload}\n")
++
+             return mergeables
+ 
+         def reducer(mergeables_out, mergeables_in):
+diff --git a/bindings/experimental/distrdf/python/DistRDF/Backends/Dask/Backend.py b/bindings/experimental/distrdf/python/DistRDF/Backends/Dask/Backend.py
+index 74c6ca18e2..5b5cac9f2e 100644
+--- a/bindings/experimental/distrdf/python/DistRDF/Backends/Dask/Backend.py
++++ b/bindings/experimental/distrdf/python/DistRDF/Backends/Dask/Backend.py
+@@ -153,3 +153,7 @@ class DaskBackend(Base.BaseBackend):
+         npartitions = kwargs.pop("npartitions", self.optimize_npartitions())
+         headnode = HeadNode.get_headnode(npartitions, *args)
+         return DataFrame.RDataFrame(headnode, self)
++
++    def make_ntuple_dataframe(self, *args, **kwargs):
++        headnode = HeadNode.RNTupleHeadNode(*args, cachepaths=kwargs.get("cachepaths"))
++        return DataFrame.RDataFrame(headnode, self)
+diff --git a/bindings/experimental/distrdf/python/DistRDF/Backends/Dask/__init__.py b/bindings/experimental/distrdf/python/DistRDF/Backends/Dask/__init__.py
+index a5c74c4c27..2877a106d6 100644
+--- a/bindings/experimental/distrdf/python/DistRDF/Backends/Dask/__init__.py
++++ b/bindings/experimental/distrdf/python/DistRDF/Backends/Dask/__init__.py
+@@ -20,3 +20,15 @@ def RDataFrame(*args, **kwargs):
+     daskbackend = Backend.DaskBackend(daskclient=daskclient)
+ 
+     return daskbackend.make_dataframe(*args, **kwargs)
++
++def MakeNTupleDataFrame(*args, **kwargs):
++    """
++    Create a distributed RDataFrame that reads RNTuple data.
++    """
++
++    from DistRDF.Backends.Dask import Backend
++    daskclient = kwargs.get("daskclient", None)
++    daskbackend = Backend.DaskBackend(daskclient=daskclient)
++
++    return daskbackend.make_ntuple_dataframe(*args, **kwargs)
++
+diff --git a/bindings/experimental/distrdf/python/DistRDF/Backends/Spark/Backend.py b/bindings/experimental/distrdf/python/DistRDF/Backends/Spark/Backend.py
+index 2eb6cc93d0..f8b810e360 100644
+--- a/bindings/experimental/distrdf/python/DistRDF/Backends/Spark/Backend.py
++++ b/bindings/experimental/distrdf/python/DistRDF/Backends/Spark/Backend.py
+@@ -161,3 +161,8 @@ class SparkBackend(Base.BaseBackend):
+         npartitions = kwargs.pop("npartitions", self.optimize_npartitions())
+         headnode = HeadNode.get_headnode(npartitions, *args)
+         return DataFrame.RDataFrame(headnode, self)
++
++    def make_ntuple_dataframe(self, *args, **kwargs):
++        headnode = HeadNode.RNTupleHeadNode(*args, cachepaths=kwargs.get("cachepaths"))
++        return DataFrame.RDataFrame(headnode, self)
++
+diff --git a/bindings/experimental/distrdf/python/DistRDF/Backends/Spark/__init__.py b/bindings/experimental/distrdf/python/DistRDF/Backends/Spark/__init__.py
+index 4b52c2e3e1..3be6b9d50b 100644
+--- a/bindings/experimental/distrdf/python/DistRDF/Backends/Spark/__init__.py
++++ b/bindings/experimental/distrdf/python/DistRDF/Backends/Spark/__init__.py
+@@ -20,3 +20,14 @@ def RDataFrame(*args, **kwargs):
+     spark = Backend.SparkBackend(sparkcontext=sparkcontext)
+ 
+     return spark.make_dataframe(*args, **kwargs)
++
++def MakeNTupleDataFrame(*args, **kwargs):
++    """
++    Create a distributed RDataFrame that reads RNTuple data.
++    """
++
++    from DistRDF.Backends.Spark import Backend
++    sparkcontext = kwargs.get("sparkcontext", None)
++    spark = Backend.SparkBackend(sparkcontext=sparkcontext)
++
++    return spark.make_ntuple_dataframe(*args, **kwargs)
+diff --git a/bindings/experimental/distrdf/python/DistRDF/HeadNode.py b/bindings/experimental/distrdf/python/DistRDF/HeadNode.py
+index 0e73aee941..46f743336c 100644
+--- a/bindings/experimental/distrdf/python/DistRDF/HeadNode.py
++++ b/bindings/experimental/distrdf/python/DistRDF/HeadNode.py
+@@ -8,6 +8,36 @@ from DistRDF import Ranges
+ 
+ logger = logging.getLogger(__name__)
+ 
++#################################
++########RNTUPLE DISTRDF##########
++#################################
++class RNTupleHeadNode(Node.Node):
++
++    def __init__(self, *args, cachepaths=None):
++        super(RNTupleHeadNode, self).__init__(None, None)
++        self.ntuplename = args[0]
++        self.ntuplefiles = args[1]
++        self.cachepaths = cachepaths
++
++    def build_ranges(self):
++        return Ranges.get_ntuple_ranges(self.ntuplename, self.ntuplefiles, self.cachepaths)
++
++    def generate_rdf_creator(self):
++
++        def build_rdf_from_range(current_range):
++            metrics = ROOT.Experimental.MetricsWrapper()
++            readopts = ROOT.Experimental.RNTupleReadOptions()
++            readopts.fCachePath = current_range.cachepath
++            rdf = ROOT.Experimental.MakeNTupleDataFrame(current_range.ntuplename, current_range.ntuplefile,
++                                                        readopts, metrics.GetPtr())
++            # Keep a reference to the metrics to be able to retrieve them later
++            rdf.ntuplemetrics = metrics
++            return rdf
++        
++        return build_rdf_from_range
++#################################
++########RNTUPLE DISTRDF##########
++#################################
+ 
+ def get_headnode(npartitions, *args):
+     """
+diff --git a/bindings/experimental/distrdf/python/DistRDF/Ranges.py b/bindings/experimental/distrdf/python/DistRDF/Ranges.py
+index 5448a365c7..9ac0fc8610 100644
+--- a/bindings/experimental/distrdf/python/DistRDF/Ranges.py
++++ b/bindings/experimental/distrdf/python/DistRDF/Ranges.py
+@@ -7,6 +7,32 @@ import ROOT
+ 
+ logger = logging.getLogger(__name__)
+ 
++#################################
++########RNTUPLE DISTRDF##########
++#################################
++class RNTupleRange(object):
++
++    def __init__(self, id, ntuplename, ntuplefile, cachepath=""):
++        self.id = id
++        self.ntuplename = ntuplename
++        self.ntuplefile = ntuplefile
++        self.cachepath = cachepath
++
++def get_ntuple_ranges(ntuplename, ntuplefiles, cachepaths=None):
++    id = 0
++    ranges = []
++    if cachepaths is None:
++        for ntuplefile in ntuplefiles:
++            ranges.append(RNTupleRange(id, ntuplename, ntuplefile))
++            id += 1
++    else:
++        for ntuplefile, pathtocache in zip(ntuplefiles, cachepaths):
++            ranges.append(RNTupleRange(id, ntuplename, ntuplefile, cachepath=pathtocache))
++            id += 1
++    return ranges
++#################################
++########RNTUPLE DISTRDF##########
++#################################
+ 
+ class EmptySourceRange(object):
+     """
+-- 
+2.27.0
+

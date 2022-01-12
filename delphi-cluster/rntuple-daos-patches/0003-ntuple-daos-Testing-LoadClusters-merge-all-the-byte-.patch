@@ -1,0 +1,62 @@
+From 9523a132a80e1d154490b313d3fc53125cdca9f5 Mon Sep 17 00:00:00 2001
+From: Javier Lopez-Gomez <javier.lopez.gomez@cern.ch>
+Date: Thu, 4 Nov 2021 12:49:27 -0500
+Subject: [PATCH 3/3] [ntuple,daos] Testing: LoadClusters(): merge all the byte
+ ranges into a single list for ReadV()
+
+---
+ tree/ntuple/v7/src/RPageStorageDaos.cxx | 18 +++++++++---------
+ 1 file changed, 9 insertions(+), 9 deletions(-)
+
+diff --git a/tree/ntuple/v7/src/RPageStorageDaos.cxx b/tree/ntuple/v7/src/RPageStorageDaos.cxx
+index b04e7b42e2..36de9cb8c1 100644
+--- a/tree/ntuple/v7/src/RPageStorageDaos.cxx
++++ b/tree/ntuple/v7/src/RPageStorageDaos.cxx
+@@ -461,6 +461,8 @@ std::vector<std::unique_ptr<ROOT::Experimental::Detail::RCluster>>
+ ROOT::Experimental::Detail::RPageSourceDaos::LoadClusters(std::span<RCluster::RKey> clusterKeys)
+ {
+    std::vector<std::unique_ptr<ROOT::Experimental::Detail::RCluster>> result;
++   std::vector<RDaosContainer::RWOperation> readRequests;
++   // Merge all the byte ranges into a single list for `RDaosContainer::ReadV()`
+    for (const auto &clusterKey : clusterKeys) {
+       auto clusterId = clusterKey.fClusterId;
+       fCounters->fNClusterLoaded.Inc();
+@@ -495,7 +497,6 @@ ROOT::Experimental::Detail::RPageSourceDaos::LoadClusters(std::span<RCluster::RK
+       }
+ 
+       // Prepare the input vector for the RDaosContainer::ReadV() call
+-      std::vector<RDaosContainer::RWOperation> readRequests;
+       auto buffer = new unsigned char[szPayload];
+       for (auto &s : onDiskPages) {
+          std::vector<d_iov_t> iovs(1);
+@@ -513,20 +514,19 @@ ROOT::Experimental::Detail::RPageSourceDaos::LoadClusters(std::span<RCluster::RK
+       }
+       fCounters->fNPageLoaded.Add(onDiskPages.size());
+ 
+-      {
+-         RNTupleAtomicTimer timer(fCounters->fTimeWallRead, fCounters->fTimeCpuRead);
+-         fDaosContainer->ReadV(readRequests);
+-      }
+-      fCounters->fNReadV.Inc();
+-      fCounters->fNRead.Add(readRequests.size());
+-
+       auto cluster = std::make_unique<RCluster>(clusterId);
+       cluster->Adopt(std::move(pageMap));
+       for (auto colId : clusterKey.fColumnSet)
+          cluster->SetColumnAvailable(colId);
+-
+       result.emplace_back(std::move(cluster));
+    }
++
++   {
++      RNTupleAtomicTimer timer(fCounters->fTimeWallRead, fCounters->fTimeCpuRead);
++      fDaosContainer->ReadV(readRequests);
++   }
++   fCounters->fNReadV.Inc();
++   fCounters->fNRead.Add(readRequests.size());
+    return result;
+ }
+ 
+-- 
+2.27.0
+

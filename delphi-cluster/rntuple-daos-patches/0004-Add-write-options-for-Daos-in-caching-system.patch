@@ -1,0 +1,35 @@
+From 2bffd03701bc9a37b6fb0d87b9d5bc27f2e443e3 Mon Sep 17 00:00:00 2001
+From: Vincenzo Eduardo Padulano <v.e.padulano@gmail.com>
+Date: Wed, 3 Nov 2021 07:41:34 -0500
+Subject: [PATCH] Add write options for Daos in caching system
+
+---
+ tree/ntuple/v7/src/RClusterPool.cxx | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/tree/ntuple/v7/src/RClusterPool.cxx b/tree/ntuple/v7/src/RClusterPool.cxx
+index ef0cecdac2..e89de58c3c 100644
+--- a/tree/ntuple/v7/src/RClusterPool.cxx
++++ b/tree/ntuple/v7/src/RClusterPool.cxx
+@@ -32,6 +32,7 @@
+ #include <utility>
+ 
+ #include <fstream> // For the cache lock
++#include <ROOT/RNTupleOptions.hxx>
+ 
+ bool ROOT::Experimental::Detail::RClusterPool::RInFlightCluster::operator<(const RInFlightCluster &other) const
+ {
+@@ -137,7 +138,9 @@ void ROOT::Experimental::Detail::RClusterPool::ExecReadClusters()
+             incachelock.close();
+          } else {
+             if (!fPageSink) {
+-               fPageSink = RPageSink::Create(fPageSource.GetNTupleName(), fPageSource.GetReadOptions().fCachePath);
++               RNTupleWriteOptionsDaos opts;
++               opts.SetObjectClass("RP_XSF");
++               fPageSink = RPageSink::Create(fPageSource.GetNTupleName(), fPageSource.GetReadOptions().fCachePath, opts);
+                auto modelptr = fPageSource.GetDescriptor().GenerateModel()->Clone();
+                fPageSink->Create(*modelptr);
+                // Create a file to flag that we have an active cache
+-- 
+2.27.0
+
