@@ -1,0 +1,27 @@
+ROOT Installation:  /lustre/rdftest/padulano/rootproject/rootinstall/master-distrdf-release/bin/root.exe
+Python executable:  /lustre/rdftest/padulano/mambaforge/envs/dev/bin/python3
+
+	lhcb event loop: 18.734927892684937 s
+
+
+Printing TTreePerfStats:
+
+Extra prints:
+fBytesRead=744009279
+fBytesReadExtra=0
+TreeCache = 30 MBytes
+N leaves  = 26
+ReadTotal = 744.009 MBytes
+ReadUnZip = 1129.61 MBytes
+ReadCalls = 526
+ReadSize  = 1414.466 KBytes/read
+Readahead = 256 KBytes
+Readextra =  0.00 per cent
+Real Time =  29.152 seconds
+CPU  Time =  17.260 seconds
+Disk Time =   1.305 seconds
+Disk IO   = 570.184 MBytes/s
+ReadUZRT  =  38.750 MBytes/s
+ReadUZCP  =  65.447 MBytes/s
+ReadRT    =  25.522 MBytes/s
+ReadCP    =  43.106 MBytes/s
